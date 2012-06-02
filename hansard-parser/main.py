@@ -1,6 +1,7 @@
 # from xml.etree import ElementTree
 import datetime
 import lxml.etree as ElementTree
+import re
 
 def string_to_date(string):
 	date = string.split("-")
@@ -158,6 +159,11 @@ class Speech(object):
 		self.speaker_hash = speaker.speaker_hash
 
 	def put(self):
+	#	count the words
+		words = re.sub(r'<[^>]*?>', '', self.speech_words)
+		word_count = len(words.split(' '))
+
+	#	count interruptions
 	#	print(self)
 		pass
 
