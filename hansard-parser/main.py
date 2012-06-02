@@ -142,6 +142,7 @@ class Speech(object):
 		self.house = None
 		self.bill_id = None
 		self.datetime = None
+		self.word_count = 0
 
 	def set_house(self, house):
 		self.house = house
@@ -161,9 +162,19 @@ class Speech(object):
 	def put(self):
 	#	count the words
 		words = re.sub(r'<[^>]*?>', '', self.speech_words)
-		word_count = len(words.split(' '))
+		self.wordcount = len(words.split(' '))
+		print self.wordcount
 
-	#	count interruptions
+	#	count interuptions
+#		interuptions = re.compile(r'*HPS-MemberInterjecting*')
+#		print interuptions.match()
+#		print interuptions
+		interjection = "HPS-MemberInterjecting"
+		interuptions = self.speech_words.split(interjection)
+		if len(interuptions) > 1:
+			self.interuptions = len(interuptions) - 1
+			print "%d interruptions." % len(interuptions)
+
 	#	print(self)
 		pass
 
