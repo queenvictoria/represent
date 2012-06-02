@@ -27,6 +27,12 @@ class Hansard(object):
 		node = tree.find("session.header/date")
 		self.date = string_to_date(node.text)
 
+		self.chamber = tree.find("session.header/chamber").text
+		self.parliament = tree.find("session.header/parliament.no").text
+		self.session = tree.find("session.header/session.no").text
+		self.period = tree.find("session.header/period.no").text
+
+#		parliament, session, period
 #	debate/subdebate/speech
 #	etree style
 #		for debate in tree.iterfind("debate/debateinfo/type[text()='BILL']"):
@@ -63,14 +69,17 @@ class Hansard(object):
 							if len(time):
 								the_speech.set_datetime(time[0].text, self.date)
 
-						speech.set_billid(bill.id)
+						the_speech.set_bill(bill)
+						the_speech.set_house(self.chamber)
 
 						speaker = Speaker()
 						speaker.speaker_name = talker.find("name").text.strip()
 						speaker.speaker_id = talker.find("name.id").text.strip()
 						speaker.generate_hash()
+						speaker.put()
 
-						the_speech.speaker_hash = speaker.speaker_hash
+						the_speech.set_speaker(speaker)
+						the_speech.put()
 						
 				
 			
@@ -111,6 +120,7 @@ class Speaker(object):
 		Save to db and return speaker id
 	"""
 	def put(self):
+		print self
 		return None
 
 	"""
@@ -128,12 +138,31 @@ class Speech(object):
 
 		self.party = None
 		self.electorate = None
+		self.house = None
+		self.bill_id = None
+		self.datetime = None
+
+	def set_house(self, house):
+		self.house = house
+		print self.house
 
 	def set_datetime(self, time, date):
 		time = string_to_time(time)
 		self.datetime = datetime.datetime(date.year, date.month, date.day, time.hour, time.minute, time.second)
 		print self.datetime
 
+	def set_bill(self, bill):
+		self.bill_id = bill.id
+
+	def set_speaker(self, speaker):
+		self.speaker_hash = speaker.speaker_hash
+
+	def put(self):
+	#	print(self)
+		pass
+
+	def __str__(self):
+		return str(self.speaker_hash+str(self.datetime)+str(self.bill_id))
 
 
 def test():
