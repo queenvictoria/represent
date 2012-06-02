@@ -63,6 +63,8 @@ class Hansard(object):
 							if len(time):
 								the_speech.set_datetime(time[0].text, self.date)
 
+						speech.set_billid(bill.id)
+
 						speaker = Speaker()
 						speaker.speaker_name = talker.find("name").text.strip()
 						speaker.speaker_id = talker.find("name.id").text.strip()
@@ -78,8 +80,16 @@ class Hansard(object):
 class Bill(object):
 	def __init__(self, name):
 		self.name = name.strip()
-		status = None
+		self.id = self.generate_hash()
+		self.status = None
 		print "Created new Bill %s." % self.name
+
+# @TODO this should be the table primary key -- remove and replace
+	def generate_hash(self):
+		import hashlib
+		m = hashlib.sha1()
+		m.update(self.name)
+		self.id = m.hexdigest()
 
 
 class Speaker(object):
