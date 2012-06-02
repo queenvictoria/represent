@@ -1,17 +1,59 @@
-from xml.etree import ElementTree
-from datetime import datetime
+# from xml.etree import ElementTree
+import datetime
+import lxml.etree as ElementTree
 
-"""
-	debates major-heading minor-heading speech
-	division divisioncount memberlist member
-	dt dd p li ul
-"""
-
+def string_to_date(string):
+	date = string.split("-")
+	return datetime.date(int(date[0]), int(date[1]), int(date[2]))
 
 class Hansard(object):
 	def __init__(self, filename):
 		self.filename = filename
-		
+		date = filename[:-4]
+		self.date = string_to_date(date)
+#		datetime.combine(date, time)
+
+		print filename
+#		print self.date
+
+	def parse_xml(self):
+		tree = ElementTree.parse(self.filename)
+#		tree.hansard.session.header.date
+		node = tree.find("session.header/date")
+		self.date = string_to_date(node.text)
+
+#	debate/subdebate/speech
+#	etree style
+#		for debate in tree.iterfind("debate/debateinfo/type[text()='BILL']"):
+#	switch to xpath
+#		find debates at any level whose debateinfo/type is BILLS
+		debates = tree.xpath("//debate[debateinfo/type='BILLS']")
+		for debate in debates:
+			subdebates = debate.xpath("subdebate.1")
+			print len(subdebates)
+			for subdebate in subdebates:
+				name = subdebate.find("subdebateinfo/title").text
+				bill = Bill(name=name)
+
+#	get the subdebate.2 siblings of this subdebate
+				for subdebate2 in subdebate.iterfind("subdebate.2"):
+					reading = speech.find("subdebateinfo/title").text
+					print reading
+					for speech in subdebate2.iterfind("speech"):
+#	talk.start, talk.text, continue
+#	talk.start > talker > name, name.id, electorate, party, in.gov, first.speech
+				
+			
+			#bill = Bill()
+
+
+class Bill(object):
+	def __init__(self, name):
+		self.name = name.strip()
+		status = None
+		print "Created new Bill %s." % self.name
+
+
 def _parse_xml_file(filename):
 	tree = ElementTree.parse(filename)
 	old = False
@@ -145,7 +187,9 @@ class Speech(object):
 def test():
 	# source = "2006-02-07.xml"
 	source = "2011-06-01.xml"
-	_parse_xml_file(source)
+	h = Hansard(source)
+	h.parse_xml()
+	# _parse_xml_file(source)
 
 
 test()
