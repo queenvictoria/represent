@@ -122,8 +122,6 @@ class Hansard(object):
 						if not speaker:
 							speaker = Speaker(speaker_id=speaker_id, speaker_name=speaker_name)
 							speaker.put()
-						else:
-							print "Already have %s." % speaker_name
 
 						the_speech.set_speaker(speaker)
 						the_speech.put()
@@ -386,7 +384,7 @@ class Speech(Base):
 	def put(self):
 	#	count the words
 		words = re.sub(r'<[^>]*?>', '', self.speech_words)
-		self.wordcount = len(words.split(' '))
+		self.word_count = len(words.split(' '))
 		# print self.wordcount
 
 	#	count interuptions
