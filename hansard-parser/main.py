@@ -10,6 +10,7 @@
 import datetime
 import lxml.etree as ElementTree
 import re
+import sys
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -21,8 +22,13 @@ from sqlalchemy import func, select
 import os
 import glob
 
-global engine, session
-engine = create_engine('sqlite:///:memory:', echo=False)
+# global engine
+global session
+engine = create_engine(
+                "mysql+mysqldb://root:pandaha@localhost/govhack", 
+                pool_recycle=3600
+            )
+# engine = create_engine('sqlite:///:memory:', echo=False)
 Session = sessionmaker(bind=engine)
 session = Session()
 
@@ -35,21 +41,29 @@ def string_to_date(string):
 
 def string_to_time(string):
 	time = string.split(":")
-	return datetime.time(int(time[0]), int(time[1]), 0)
+	try:
+		return datetime.time(int(time[0]), int(time[1]), 0)
+	except:
+		return datetime.time(0,0,0)
 
 
 class Hansard(object):
 	def __init__(self, filename):
 		self.filename = filename
 		date = filename[:-4]
-		self.date = string_to_date(date)
+#		self.date = string_to_date(date)
 #		datetime.combine(date, time)
 
 		print filename
 #		print self.date
 
 	def parse_xml(self):
-		tree = ElementTree.parse(self.filename)
+		try:
+			tree = ElementTree.parse(self.filename)
+		except:
+			print "Unexpected error:", sys.exc_info()[0]
+			return
+
 #		tree.hansard.session.header.date
 		node = tree.find("session.header/date")
 		self.date = string_to_date(node.text)
@@ -99,11 +113,17 @@ class Hansard(object):
 						the_speech.set_bill(bill)
 						the_speech.set_house(self.chamber)
 
-						speaker = Speaker()
-						speaker.speaker_name = talker.find("name").text.strip()
-						speaker.speaker_id = talker.find("name.id").text.strip()
-						speaker.generate_hash()
-						speaker.put()
+						speaker_name = talker.find("name").text.strip()
+						speaker_id = talker.find("name.id").text.strip()
+						speaker_hash = generate_hash(speaker_id, speaker_name)
+						
+						global session
+						speaker = session.query(Speaker).get(speaker_hash)
+						if not speaker:
+							speaker = Speaker(speaker_id=speaker_id, speaker_name=speaker_name)
+							speaker.put()
+						else:
+							print "Already have %s." % speaker_name
 
 						the_speech.set_speaker(speaker)
 						the_speech.put()
@@ -145,7 +165,7 @@ class Division(Base):
 	bill = relationship("Bill", backref=backref('division', order_by=id))
 
 	date = Column(DateTime)
-	sponsor = Column(String)
+	sponsor = Column(String(32))
 	total_votes = Column(Integer)
 	split = Column(Float)
 
@@ -196,10 +216,10 @@ class Vote(Base):
 	division_id = Column(Integer, ForeignKey('division.id'))
 	division = relationship("Division", backref=backref('vote', order_by=id))
 #	who voted?
-	voter_name = Column(String)
-	vote = Column(String)
+	voter_name = Column(String(32))
+	vote = Column(String(8))
 #	if they voted they must be a member surely
-	speaker_hash = Column(String, ForeignKey('speaker.speaker_hash'))
+	speaker_hash = Column(String(128), ForeignKey('speaker.speaker_hash'))
 	speaker = relationship("Speaker", backref=backref('vote', order_by=id))
 
 	def __init__(self, voter_name, division, vote):
@@ -218,64 +238,36 @@ class Vote(Base):
 		self = session.merge(self)
 		
 
-class Bill(Base):
-	__tablename__ = 'bill'
-	id = Column(Integer, primary_key=True)
-
-	name = Column(String)
-	status = Column(String)
-
-#	sponsors are surely speakers
-	sponsor_id = Column(Integer, ForeignKey('speaker.speaker_id'))
-	sponsor = relationship("Speaker", backref=backref('bill', order_by=id))
-
-	def __init__(self, name):
-		self.name = name.strip()
-		self.id = self.generate_hash()
-		self.status = None
-		self.sponser = None
-		print "Created new Bill %s." % self.name
-
-# @TODO this should be the table primary key -- remove and replace
-	def generate_hash(self):
-		import hashlib
-		m = hashlib.sha1()
-		m.update(self.name)
-		self.id = m.hexdigest()
-
-	def put(self):
-		global session
-		self = session.merge(self)
 
 
 class Speaker(Base):
 	__tablename__ = 'speaker'
 
-	speaker_id = Column(Integer)
-	speaker_hash = Column(String, primary_key=True)
-	speaker_name = Column(String)
-	speaker_name_short = Column(String)
+	speaker_hash = Column(String(128), primary_key=True)
+	speaker_id = Column(String(8))
+	speaker_name = Column(String(128))
+	speaker_name_short = Column(String(32))
 
 	def __init__(self, speaker_id="", speaker_name=""):
 		self.speaker_name = speaker_name.strip()
 		self.speaker_id = speaker_id.strip()
-		self.generate_hash()
+		self.speaker_hash = generate_hash(self.speaker_id, self.speaker_name)
 
 	def __str__(self):
 		return self.speaker_name
 	
-	def generate_hash(self):
-		import hashlib
-		m = hashlib.sha1()
-		m.update(self.speaker_id+self.speaker_name)
-		self.speaker_hash = m.hexdigest()
 
 	"""
 		Save to db and return speaker id
 	"""
 	def put(self):
 		global session
-		self = session.merge(self)
+		try:
+			self = session.merge(self)
+			print "Saved %s" % self.speaker_name
+		except:
+			print "Couldn't merge speaker."
+
 #		print self.speaker_name
 
 	"""
@@ -284,6 +276,11 @@ class Speaker(Base):
 	def get(self):
 		return None
 
+def generate_hash(speaker_id, speaker_name):
+	import hashlib
+	m = hashlib.sha1()
+	m.update(speaker_id+speaker_name)
+	return m.hexdigest()
 
 def get_by_voter_name(voter_name):
 	# 	talker/name
@@ -307,18 +304,49 @@ def get_by_voter_name(voter_name):
 			speaker.speaker_name_short = voter_name
 			speaker = session.merge(speaker)
 		return speaker
-		
+
+
+class Bill(Base):
+	__tablename__ = 'bill'
+	id = Column(Integer, primary_key=True)
+
+	name = Column(String(255))
+	status = Column(String(32))
+
+#	sponsors are surely speakers
+#	sponsor_id = Column(Integer, ForeignKey('speaker.speaker_id'))
+#	sponsor = relationship("Speaker", backref=backref('bill', order_by=id))
+
+	def __init__(self, name):
+		self.name = ascii_only(name.strip())
+		self.id = self.generate_hash()
+		self.status = None
+		self.sponsor = None
+		print "Created new Bill %s." % self.name
+
+# @TODO this should be the table primary key -- remove and replace
+	def generate_hash(self):
+		import hashlib
+		m = hashlib.sha1()
+		# this needs to be ascii
+		m.update(ascii_only(self.name))
+		self.id = m.hexdigest()
+
+	def put(self):
+		global session
+		self = session.merge(self)
+
 
 class Speech(Base):
 	__tablename__ = 'speech'
 	id = Column(Integer, primary_key=True)
 
-	speaker_hash = Column(String, ForeignKey('speaker.speaker_hash'))
+	speaker_hash = Column(String(128), ForeignKey('speaker.speaker_hash'))
 	speaker = relationship("Speaker", backref=backref('speech', order_by=id))
 
-	reading = Column(String)
-	party = Column(String)
-	house = Column(String)
+	reading = Column(String(32))
+	party = Column(String(32))
+	house = Column(String(32))
 	bill_id = Column(Integer, ForeignKey('bill.id'))
 	bill = relationship("Bill", backref=backref('bill', order_by=id))
 
@@ -374,7 +402,7 @@ class Speech(Base):
 		global session
 		self = session.merge(self)
 		# commit here as we need to make sure we're not duplicating speakers
-		session.commit()
+		# session.commit()
 
 	def __str__(self):
 		return str(self.speaker_hash+str(self.datetime)+str(self.bill_id))
@@ -414,11 +442,26 @@ def update_speaker_names():
 				session.merge(voter)
 				print voter.speaker.speaker_name_short
 
+def ascii_only(s):
+	return "".join(i for i in s if ord(i)<128)
 
 def main():
 	path = "../data/hansard-xml.d/"
-	for infile in glob.glob(os.path.join(path, '*.xml')):
-		print "current file is: " + infile
+	for source in glob.glob(os.path.join(path, '*.xml')):
+		print "current file is: " + source
+		h = Hansard(source)
+		h.parse_xml()
+
+	global session
+#	session.query(func.count(Speaker.speaker_id))
+	# _parse_xml_file(source)
+	speakers = session.query(func.count(Speaker.speaker_id)).all() # about .01 sec
+	votes = session.query(func.count(Vote.id)).all() # about .01 sec
+	divisions = session.query(func.count(Division.id)).all() # about .01 sec
+	speechs = session.query(func.count(Speech.id)).all() # about .01 sec
+	votes = session.query(func.count(Vote.id)).all() # about .01 sec
+	print speakers, votes, divisions, speechs
+
 
 
 main()
