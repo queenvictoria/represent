@@ -18,6 +18,9 @@ from sqlalchemy import Column, Integer, String, DateTime, Text, Float, ForeignKe
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy import func, select
 
+import os
+import glob
+
 global engine, session
 engine = create_engine('sqlite:///:memory:', echo=False)
 Session = sessionmaker(bind=engine)
@@ -193,10 +196,10 @@ class Vote(Base):
 	division_id = Column(Integer, ForeignKey('division.id'))
 	division = relationship("Division", backref=backref('vote', order_by=id))
 #	who voted?
-	voter = Column(String)
+	voter_name = Column(String)
 	vote = Column(String)
 #	if they voted they must be a member surely
-	speaker_id = Column(Integer, ForeignKey('speaker.speaker_id'))
+	speaker_hash = Column(String, ForeignKey('speaker.speaker_hash'))
 	speaker = relationship("Speaker", backref=backref('vote', order_by=id))
 
 	def __init__(self, voter_name, division, vote):
@@ -204,9 +207,11 @@ class Vote(Base):
 		self.voter_name = voter_name
 		self.vote = vote
 
-		self.speaker = Speaker()
-		self.speaker.get_by_voter_name(self.voter_name)
-		self.speaker_id = self.speaker.speaker_id
+		speaker = get_by_voter_name(self.voter_name)
+		if hasattr(speaker, 'speaker_name'):
+			if speaker.speaker_name != "":
+				self.speaker = speaker
+				self.speaker_hash = self.speaker.speaker_hash
 
 	def put(self):
 		global session
@@ -225,7 +230,6 @@ class Bill(Base):
 	sponsor = relationship("Speaker", backref=backref('bill', order_by=id))
 
 	def __init__(self, name):
-		
 		self.name = name.strip()
 		self.id = self.generate_hash()
 		self.status = None
@@ -253,7 +257,6 @@ class Speaker(Base):
 	speaker_name_short = Column(String)
 
 	def __init__(self, speaker_id="", speaker_name=""):
-		
 		self.speaker_name = speaker_name.strip()
 		self.speaker_id = speaker_id.strip()
 		self.generate_hash()
@@ -281,7 +284,8 @@ class Speaker(Base):
 	def get(self):
 		return None
 
-	def get_by_voter_name(self, voter_name):
+
+def get_by_voter_name(voter_name):
 	# 	talker/name
 	# 	<name role="metadata">Symon, Mike, MP</name>
 	#	voter_name is speaker_name_short
@@ -297,12 +301,13 @@ class Speaker(Base):
 		query = session.query(Speaker).filter(Speaker.speaker_name.like(namelike)) 
 
 		# if we found a result then update the speaker and return the object
+		speaker = None
 		if query.first():
-			self = query.first()
-			self.speaker_name_short = voter_name
-			self = session.merge(self)
+			speaker = query.first()
+			speaker.speaker_name_short = voter_name
+			speaker = session.merge(speaker)
+		return speaker
 		
-
 
 class Speech(Base):
 	__tablename__ = 'speech'
@@ -376,6 +381,7 @@ class Speech(Base):
 
 Base.metadata.create_all(engine) 
 
+
 def test():
 	# source = "2006-02-07.xml"
 	source = "2011-06-01.xml"
@@ -396,12 +402,26 @@ def test():
 	Select all votes whose speaker is None and run the get_by_voter_name again.
 """
 def update_speaker_names():
+	global session
+	unknown = session.query(Vote).filter(Vote.speaker == None).all()
+	print len(unknown)
+	for voter in unknown:
+		speaker = get_by_voter_name(voter.voter_name)
+		if hasattr(speaker, 'speaker_name'):
+			if speaker.speaker_name != "":
+				voter.speaker = speaker
+				voter.speaker_hash = voter.speaker.speaker_hash
+				session.merge(voter)
+				print voter.speaker.speaker_name_short
 
-	pass
 
 def main():
-	pass
+	path = "../data/hansard-xml.d/"
+	for infile in glob.glob(os.path.join(path, '*.xml')):
+		print "current file is: " + infile
 
 
-test()
+main()
+# test()
+# update_speaker_names()
 
