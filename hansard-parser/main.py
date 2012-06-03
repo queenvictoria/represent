@@ -24,8 +24,10 @@ import glob
 
 # global engine
 global session
+from local_settings import settings
+
 engine = create_engine(
-                "mysql+mysqldb://root:pandaha@localhost/govhack2", 
+                "mysql+mysqldb://%s:%s@localhost/%s" % (settings['dbuser'], settings['dbpass'], settings['dbname']), 
                 pool_recycle=3600
             )
 # engine = create_engine('sqlite:///:memory:', echo=False)
