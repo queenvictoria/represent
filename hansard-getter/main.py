@@ -52,19 +52,20 @@ def parseFile(s):
 	print "Read %d files." % len(searches_read)
 
 	soup = BeautifulSoup(doc)
-	for page in soup.select('div.page-controls li a'):
-		if not page.get("href") in searches_read:
-			parseFile(page.get("href"))
 		
+#	find all the xml files and queue them
 #	print soup.select('a[href^=http://parl][title=^XML]')
 #	print soup.select("a[title^=XML]")
 	xml = soup.select("a[title^=XML]")
-
 #	many of these are the same -- dont worry we'll only download them once
 	for x in xml:
 		m = re.search('toc_unixml/(.+);fileType', x.get('href'))
 		xmlfiles[x.get('href')] = urllib2.unquote(m.group(1))
 
 	print "%d XML files queued." % len(xmlfiles)
+
+	for page in soup.select('div.page-controls li a'):
+		if not page.get("href") in searches_read:
+			parseFile(page.get("href"))
 
 main()
