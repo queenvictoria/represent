@@ -25,7 +25,7 @@ import glob
 # global engine
 global session
 engine = create_engine(
-                "mysql+mysqldb://root:pandaha@localhost/govhack", 
+                "mysql+mysqldb://root:pandaha@localhost/govhack2", 
                 pool_recycle=3600
             )
 # engine = create_engine('sqlite:///:memory:', echo=False)
@@ -87,6 +87,9 @@ class Hansard(object):
 				bill = Bill(name=name)
 				bill.put()
 
+#	default date to be updated below
+				current_date = datetime.datetime(self.date.year, self.date.month, self.date.day, 0, 0, 0)
+
 #	get the subdebate.2 siblings of this subdebate
 				for subdebate2 in subdebate.iterfind("subdebate.2"):
 					reading = subdebate2.find("subdebateinfo/title").text
@@ -109,6 +112,8 @@ class Hansard(object):
 							time = talktext.xpath(".//span[@class='HPS-Time']")
 							if len(time):
 								the_speech.set_datetime(time[0].text, self.date)
+						
+						current_date = the_speech.datetime
 
 						the_speech.set_bill(bill)
 						the_speech.set_house(self.chamber)
@@ -137,7 +142,10 @@ class Hansard(object):
               		"""
 					for division in subdebate2.iterfind("division/division.data"):
 						direction = {'ayes','noes','PAIRS'}
-						the_division = Division(bill=bill)
+						the_division = Division(bill=bill, date=current_date)
+						the_division.bill_hash = bill.bill_hash
+						# hacky but works - does relation solve this properly ?
+						the_division.put()
 
 						for d in direction:
 							query = "%s/names/name" % d
@@ -149,37 +157,70 @@ class Hansard(object):
 									vote = Vote(voter_name=voter.text, division=the_division, 
 										vote=d)
 									vote.put()
+
 						the_division.put()
 		# push everything into the database
 		global session
 		session.commit()
-			
+
+
+
+class Bill(Base):
+	__tablename__ = 'bill'
+	# id = Column(Integer, primary_key=True)
+	bill_hash = Column(String(128), primary_key=True)
+	name = Column(String(255))
+	status = Column(String(32))
+	divisions = relationship("Division")
+
+#	sponsors are surely speakers
+#	sponsor_id = Column(Integer, ForeignKey('speaker.speaker_id'))
+#	sponsor = relationship("Speaker", backref=backref('bill', order_by=id))
+
+	def __init__(self, name):
+		self.name = ascii_only(name.strip())
+		
+		self.status = None
+		self.sponsor = None
+		print "Created new Bill %s." % self.name
+		self.generate_hash()
+
+# @TODO this should be the table primary key -- remove and replace
+	def generate_hash(self):
+		import hashlib
+		m = hashlib.sha1()
+		# this needs to be ascii
+		m.update(ascii_only(self.name))
+		self.bill_hash = m.hexdigest()
+
+	def put(self):
+		global session
+		self = session.merge(self)
+
 
 class Division(Base):
 	__tablename__ = 'division'
-	id = Column(Integer, primary_key=True)
-	
-	bill_id = Column(Integer, ForeignKey('bill.id'))
-	bill = relationship("Bill", backref=backref('division', order_by=id))
-
+	division_hash = Column(String(128), primary_key=True)
+	bill_hash = Column(String(128), ForeignKey('bill.bill_hash'))
+#	bill = relationship("Bill", backref=backref('division'))
 	date = Column(DateTime)
 	sponsor = Column(String(32))
 	total_votes = Column(Integer)
 	split = Column(Float)
+	votes = relationship("Vote")
 
 	def __init__(self, bill=None, date=datetime.datetime.now(), sponsor=None):
-
-		self.bill_id = bill.id
+		self.bill_hash = bill.bill_hash
 		self.date = date
 		self.sponsor = sponsor
-
+	
 		self.total_votes = 0
 		self.split = 0
 		self.ayes = 0
 		self.noes = 0
 		self.pairs = 0
 
-	#	self.generate_hash()
+		self.generate_hash()
 
 	def add_votes(self, direction='ayes', count=0):
 		self.total_votes = self.total_votes + int(count)
@@ -193,35 +234,32 @@ class Division(Base):
 		if (self.ayes + self.noes) > 0 and self.ayes > 0:
 			self.split = round(float(self.ayes) / float( self.ayes + self.noes ),3)
 
-# @TODO this should be the table primary key -- remove and replace
-# deprecated
 	def generate_hash(self):
 		import hashlib
 		m = hashlib.sha1()
-		m.update(str(self.date)+str(self.bill_id))
-		self.id = m.hexdigest()
+		m.update(str(self.date)+str(self.bill_hash))
+		self.division_hash = m.hexdigest()
 
 	def put(self):
 		global session
 		self = session.merge(self)
-
 		
 
 class Vote(Base):
 	__tablename__ = 'vote'
 	id = Column(Integer, primary_key=True)
 #	what did we vote about?
-	division_id = Column(Integer, ForeignKey('division.id'))
-	division = relationship("Division", backref=backref('vote', order_by=id))
+	division_hash = Column(String(128), ForeignKey('division.division_hash'))
+	division = relationship("Division", backref=backref('vote'))
 #	who voted?
 	voter_name = Column(String(32))
 	vote = Column(String(8))
 #	if they voted they must be a member surely
 	speaker_hash = Column(String(128), ForeignKey('speaker.speaker_hash'))
-	speaker = relationship("Speaker", backref=backref('vote', order_by=id))
+#	speaker = relationship("Speaker", backref=backref('vote'))
 
-	def __init__(self, voter_name, division, vote):
-		self.division_id = division.id
+	def __init__(self, voter_name, division=None, vote='ayes'):
+		self.division_hash = division.division_hash
 		self.voter_name = voter_name
 		self.vote = vote
 
@@ -234,8 +272,6 @@ class Vote(Base):
 	def put(self):
 		global session
 		self = session.merge(self)
-		
-
 
 
 class Speaker(Base):
@@ -304,49 +340,19 @@ def get_by_voter_name(voter_name):
 		return speaker
 
 
-class Bill(Base):
-	__tablename__ = 'bill'
-	id = Column(Integer, primary_key=True)
-
-	name = Column(String(255))
-	status = Column(String(32))
-
-#	sponsors are surely speakers
-#	sponsor_id = Column(Integer, ForeignKey('speaker.speaker_id'))
-#	sponsor = relationship("Speaker", backref=backref('bill', order_by=id))
-
-	def __init__(self, name):
-		self.name = ascii_only(name.strip())
-		self.id = self.generate_hash()
-		self.status = None
-		self.sponsor = None
-		print "Created new Bill %s." % self.name
-
-# @TODO this should be the table primary key -- remove and replace
-	def generate_hash(self):
-		import hashlib
-		m = hashlib.sha1()
-		# this needs to be ascii
-		m.update(ascii_only(self.name))
-		self.id = m.hexdigest()
-
-	def put(self):
-		global session
-		self = session.merge(self)
-
 
 class Speech(Base):
 	__tablename__ = 'speech'
 	id = Column(Integer, primary_key=True)
 
 	speaker_hash = Column(String(128), ForeignKey('speaker.speaker_hash'))
-	speaker = relationship("Speaker", backref=backref('speech', order_by=id))
+	speaker = relationship("Speaker", backref=backref('speech'))
 
 	reading = Column(String(32))
 	party = Column(String(32))
 	house = Column(String(32))
-	bill_id = Column(Integer, ForeignKey('bill.id'))
-	bill = relationship("Bill", backref=backref('bill', order_by=id))
+	bill_hash = Column(String(128), ForeignKey('bill.bill_hash'))
+	bill = relationship("Bill", backref=backref('bill'))
 
 	datetime = Column(DateTime)
 	word_count = Column(Integer)
@@ -362,7 +368,7 @@ class Speech(Base):
 		self.party = None
 		self.electorate = None
 		self.house = None
-		self.bill_id = None
+		self.bill_hash = None
 		self.datetime = None
 		self.word_count = 0
 
@@ -376,7 +382,7 @@ class Speech(Base):
 		# print self.datetime
 
 	def set_bill(self, bill):
-		self.bill_id = bill.id
+		self.bill_hash = bill.bill_hash
 
 	def set_speaker(self, speaker):
 		self.speaker_hash = speaker.speaker_hash
@@ -395,7 +401,7 @@ class Speech(Base):
 		interuptions = self.speech_words.split(interjection)
 		if len(interuptions) > 1:
 			self.interuptions = len(interuptions) - 1
-			print "%d interruptions." % len(interuptions)
+			# print "%d interruptions." % len(interuptions)
 
 		global session
 		self = session.merge(self)
@@ -403,7 +409,7 @@ class Speech(Base):
 		# session.commit()
 
 	def __str__(self):
-		return str(self.speaker_hash+str(self.datetime)+str(self.bill_id))
+		return str(self.speaker_hash+str(self.datetime)+str(self.bill_hash))
 
 Base.metadata.create_all(engine) 
 
@@ -455,7 +461,7 @@ def main():
 	# _parse_xml_file(source)
 	speakers = session.query(func.count(Speaker.speaker_id)).all() # about .01 sec
 	votes = session.query(func.count(Vote.id)).all() # about .01 sec
-	divisions = session.query(func.count(Division.id)).all() # about .01 sec
+	divisions = session.query(func.count(Division.division_hash)).all() # about .01 sec
 	speechs = session.query(func.count(Speech.id)).all() # about .01 sec
 	votes = session.query(func.count(Vote.id)).all() # about .01 sec
 	print speakers, votes, divisions, speechs
