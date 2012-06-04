@@ -452,7 +452,7 @@ def ascii_only(s):
 	return "".join(i for i in s if ord(i)<128)
 
 def main():
-	path = "../data/hansard-xml.d/"
+	path = "../data/"
 	for source in glob.glob(os.path.join(path, '*.xml')):
 		print "current file is: " + source
 		h = Hansard(source)
