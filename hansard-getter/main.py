@@ -1,8 +1,13 @@
 # from BeautifulSoup import BeautifulSoup
 from bs4 import BeautifulSoup
+import pickle
+
 import urllib2
+import urllib
+from urlparse import urlparse, parse_qs, parse_qsl
 import re
 import sys
+import os
 
 
 DOMAIN="parlinfo.aph.gov.au"
@@ -10,27 +15,108 @@ URL="http://www.aph.gov.au/Parliamentary_Business/Hansard/Search"
 #	?page=2
 
 search_path = "http://www.aph.gov.au/Parliamentary_Business/Hansard/Search"
-query_string = "?page=1&hto=1&q=&ps=100&drt=2&drv=7&drvH=7&f=28%2f09%2f2010&to=03%2f06%2f2012&pnu=43&pnuH=43&pi=0&chi=2&coi=0&st=1"
+num_results = 100
+parliament_no = 42;
 
-xmlfiles = {}
-searches = {}
-searches_read = []
+# senate chi=1
+# reps chi=2
+# main committee=3
+# joint committee=4
+# estimates=5
+# all other committees=6
 
-out_path = "../data/parlinfo.aph.gov.au/hansard/"
+chamber = 2
 
+default_query = {
+	"page": 1,
+	"hto": 1,
+	"q": '',
+	"ps": num_results,
+	"drt": 2,
+	"drv": 7,
+	"drvH": 7,
+	"f": "01/01/1995",
+	"to": "01/01/2032",
+	"pnu": parliament_no,
+	"pnuH": parliament_no,
+	"pi": 0,
+	"chi": chamber,
+	"coi": 0,
+	"st": 1,
+}
+
+global defaults
+global options
+defaults = {}
+defaults['xmlfiles'] = {}
+defaults['searches'] = {}
+defaults['searches_read'] = []
+options_file = "settings.pickle"
+out_path = "../data/parlinfo.aph.gov.au/hansard"
+
+
+def init():
+	global defaults
+	global options
+	# copy the defults to opts
+	options = defaults
+	# copy the default args into the query
+	options["query_string"] = default_query
+
+	# merge the opts with the saved opts
+	_load_opts(options)
+
+	# pop off the last page we loaded and run that one again 
+	# (helps with cancellations where the initial load page is stored)
+	# catch empty list error
+	try:
+		options['searches_read'].pop()
+	except:
+		pass
 
 def main():
+	global options
+	init()
+	
+	try:
+		options["query_string"].append(('q',''))
+	except:
+		# first time around its not a list
+		pass
+
+	query_string = "?%s" % urllib.urlencode(options["query_string"])
 	parseFile(query_string)
+
+	print "Retrieving %d XML files." % len(options['xmlfiles'])
 
 	# get the xml files
 	i = 0
-	for url in xmlfiles.iterkeys():
+	try:
+		os.mkdir("%s/%s" % (out_path, parliament_no))
+	except OSError, e:
+		if e.errno == 17:
+			print "Directory exists."
+		else:
+			print e.errno, e.args
+			
+			print "Coulding make directory %s/%s." % (out_path, parliament_no)
+			return
+	except:
+		print "Coulding make directory %s/%s." % (out_path, parliament_no)
+		return
+
+	for url in options['xmlfiles'].iterkeys():
 		i = i + 1
-		filename = "%s/%s" % (out_path, xmlfiles[url])
+		filename = "%s/%s/%s" % (out_path, parliament_no, options['xmlfiles'][url])
 		
+		# don't download files we already have
+		if os.path.isfile(filename):
+			print "Already downloaded %s/%s" % (parliament_no, options['xmlfiles'][url])
+			continue
+
 		req = urllib2.Request(url)
 		f = urllib2.urlopen(req)
-		print "%s %s" % (len(xmlfiles) - i, filename)
+		print "%s %s" % (len(options['xmlfiles']) - i, filename)
 
 		# Open our local file for writing
 		outfile = open(filename, "wb")
@@ -41,15 +127,14 @@ def main():
 
 def parseFile(s):
 	url = "%s%s" % (search_path, s)
-	print url
-
+	print "Loading %s ..." % url
 	file = urllib2.urlopen(url)
 	# file = open("../data/www.aph.gov.au/search.html")
 	doc = file.read()
 
 #	add it to the list of pages we've parsed
-	searches_read.append(s)
-	print "Read %d files." % len(searches_read)
+	options['searches_read'].append(s)
+	print "read %d files." % len(options['searches_read'])
 
 	soup = BeautifulSoup(doc)
 		
@@ -60,12 +145,47 @@ def parseFile(s):
 #	many of these are the same -- dont worry we'll only download them once
 	for x in xml:
 		m = re.search('toc_unixml/(.+);fileType', x.get('href'))
-		xmlfiles[x.get('href')] = urllib2.unquote(m.group(1))
+		options['xmlfiles'][x.get('href')] = urllib2.unquote(m.group(1))
 
-	print "%d XML files queued." % len(xmlfiles)
+	print "%d XML files queued." % len(options['xmlfiles'])
+#	save out the query string so we can resume in the right place
+	o = urlparse(url)
+	options["query_string"] = parse_qsl(o.query)
 
+	_save_opts()
+	
 	for page in soup.select('div.page-controls li a'):
-		if not page.get("href") in searches_read:
+		if not page.get("href") in options['searches_read']:
 			parseFile(page.get("href"))
+		else:
+#			print "Already read that one."
+			pass
+
+
+"""
+	Save out options so we can cancel and resume.
+"""
+def _save_opts():
+	global options
+	f = open(options_file, "wb")
+	pickle.dump(options, f)
+	f.close()
+
+
+"""
+	Merge defaults with saved options.
+"""
+def _load_opts(defaults):
+	global options
+	try:
+		f = open(options_file, "rb")
+		options = pickle.load(f)
+		f.close()
+		options = dict(defaults.items() + options.items())
+		print "Loaded options."
+	except:
+		print "Couldn't load previous options."
+		pass
+
 
 main()

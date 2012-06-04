@@ -1,3 +1,4 @@
 data/
 local_settings.py
 *.pyc
+settings.pickle
