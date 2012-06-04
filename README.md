@@ -9,7 +9,7 @@ These notes are written from memory. Please correct inaccuracies.
 ###OS X###
 
 1. Install brew
-> https://github.com/mxcl/homebrew/wiki/installation
+    https://github.com/mxcl/homebrew/wiki/installation
 
 ###Ubuntu###
 
@@ -20,13 +20,13 @@ These notes are written from memory. Please correct inaccuracies.
 1. `$ sudo easy_install pip`
 1. `$ pip install virtualenv virtualenvwrapper`
 1. Install virtualenv and virtualenvwrapper. Configure your .profile as the installation instructions for virtualenvwrapper suggest.
-> http://www.doughellmann.com/projects/virtualenvwrapper/
+    http://www.doughellmann.com/projects/virtualenvwrapper/
 1. `$ mkvirtualenv represent`
 1. `$ workon represent`
 1. `$ cdproject`
 1. `$ pip install -r require.txt`
 
-##Useage##
+##Usage##
 
 ###hansard-getter###
 
@@ -45,7 +45,7 @@ Currently there are no settings. It is hardwired to parse local files in the dat
 1. `$ cd hansard-parser`
 1. `$ cp settings.conf.example settings.conf`
 1. Configure your database settings in settings.conf (currently mysql on localhost only).
-
+1. `$ python main.py`
 
 ###Sample queries###
 
