@@ -24,10 +24,15 @@ import glob
 
 # global engine
 global session
-from local_settings import settings
+
+try:
+	from local_settings import settings
+except:
+	print "Please configure local_settings.py and try again."
+	sys.exit()
 
 engine = create_engine(
-                "mysql+mysqldb://%s:%s@localhost/%s" % (settings['dbuser'], settings['dbpass'], settings['dbname']), 
+                "mysql+mysqldb://%s:%s@%s/%s" % (settings['dbuser'], settings['dbpass'], settings['dbhost'], settings['dbname']), 
                 pool_recycle=3600
             )
 # engine = create_engine('sqlite:///:memory:', echo=False)

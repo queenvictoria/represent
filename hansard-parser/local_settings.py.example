@@ -1,1 +1,1 @@
-settings = {"dbuser":"user", "dbpass":"password", "dbname": "hansard"}
+settings = {"dbuser":"user", "dbpass":"password", "dbname": "hansard", "dbhost": "host"}
