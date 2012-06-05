@@ -2,7 +2,10 @@
 	@TODO
 	-	sponsors
 	v	matching talkers with voters
-
+	-   handle debates that have multiple bills pressented (comma separated)
+	-	bill status (based on a division)
+	-	be good to get bill urls too
+	-	link in original references for speeches too (xml file at first)
 
 """
 
@@ -11,6 +14,7 @@ import datetime
 import lxml.etree as ElementTree
 import re
 import sys
+import fnmatch
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -47,6 +51,8 @@ def string_to_date(string):
 	return datetime.date(int(date[0]), int(date[1]), int(date[2]))
 
 def string_to_time(string):
+	if string is None:
+		string = "00:00"
 	time = string.split(":")
 	try:
 		return datetime.time(int(time[0]), int(time[1]), 0)
@@ -71,9 +77,17 @@ class Hansard(object):
 			print "Unexpected error:", sys.exc_info()[0]
 			return
 
+		session_header = tree.find("session.header")
+		if session_header is None:
+			print "Older (unsupported) data format. Skipping %s." % self.filename
+			return
+
 #		tree.hansard.session.header.date
 		node = tree.find("session.header/date")
-		self.date = string_to_date(node.text)
+		try:
+			self.date = string_to_date(node.text)
+		except:
+			self.date = datetime.date.today()
 
 		self.chamber = tree.find("session.header/chamber").text
 		self.parliament = tree.find("session.header/parliament.no").text
@@ -87,6 +101,7 @@ class Hansard(object):
 #	switch to xpath
 #		find debates at any level whose debateinfo/type is BILLS
 		debates = tree.xpath("//debate[debateinfo/type='BILLS']")
+		print "%d debates about Bills found." % len(debates)
 		for debate in debates:
 			subdebates = debate.xpath("subdebate.1")
 			for subdebate in subdebates:
@@ -458,8 +473,17 @@ def ascii_only(s):
 
 def main():
 	path = "../data/"
+
+	for root, dirnames, filenames in os.walk(path):
+		for filename in fnmatch.filter(filenames, '*.xml'):
+			source = os.path.join(root, filename)
+			print "Current file is: " + source
+			h = Hansard(source)
+			h.parse_xml()
+
+
 	for source in glob.glob(os.path.join(path, '*.xml')):
-		print "current file is: " + source
+		print "Current file is: " + source
 		h = Hansard(source)
 		h.parse_xml()
 
