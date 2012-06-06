@@ -163,7 +163,7 @@ class Hansard(object):
 		                  <name>Ale
               		"""
 					for division in subdebate2.iterfind("division/division.data"):
-						direction = {'ayes','noes','PAIRS'}
+						direction = ['ayes','noes','PAIRS']
 						the_division = Division(bill=bill, date=current_date)
 						the_division.bill_hash = bill.bill_hash
 						# hacky but works - does relation solve this properly ?
